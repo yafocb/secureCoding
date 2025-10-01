@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>검색 결과</title>
+  <style>
+    .box { border:1px solid #aaa; padding:16px; margin:12px 0; background:#fff; }
+    .sql { font-family:monospace; color:#333; }
+  </style>
+</head>
+<body>
+  <h1>검색 결과</h1>
+
+  <p><strong>모드:</strong> {% if mode == 'vulnerable' %}취약코드검색{% else %}안전코드검색{% endif %}</p>
+
+  <div class="box">
+    <h3>실행된 SQL</h3>
+    <div class="sql">{{ executed_sql }}</div>
+    {% if params %}
+    <p><strong>Params:</strong> {{ params }}</p>
+    {% endif %}
+  </div>
+
+  <div class="box">
+    <h3>데이터 결과:</h3>
+    {% if message %}
+      <p>오류: {{ message }}</p>
+    {% endif %}
+
+    {% if results %}
+      <ul>
+      {% for r in results %}
+        <li>{{ r }}</li>
+      {% endfor %}
+      </ul>
+    {% else %}
+      <p>일치하는 데이터가 없습니다.</p>
+    {% endif %}
+  </div>
+
+  <p><a href="{% url 'index' %}">다시 입력</a> | <a href="{% url 'student_list' %}">목록</a></p>
+
+</body>
+</html>
