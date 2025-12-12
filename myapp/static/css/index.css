@@ -1,0 +1,127 @@
+/* myapp/static/css/index.css - 메인 홈 화면 전용 스타일 */
+
+body {
+    background: linear-gradient(135deg, #bfe9ff 0%, #ff6e7f 100%);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.container {
+    max-width: 900px;
+    width: 100%;
+    padding: 40px;
+}
+
+h1 {
+    text-align: center;
+    font-size: 2.5em;
+    margin-bottom: 10px;
+}
+
+.subtitle {
+    text-align: center;
+    color: #666;
+    margin-bottom: 40px;
+    font-size: 1.1em;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.card {
+    border: 2px solid #e9ecef;
+    border-radius: 15px;
+    padding: 25px;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+    border-color: #667eea;
+}
+
+.card-icon {
+    font-size: 3em;
+    margin-bottom: 15px;
+}
+
+.card-title {
+    font-size: 1.3em;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.card-desc {
+    font-size: 0.9em;
+    color: #454444;
+    line-height: 1.4;
+}
+
+/* 각 카드별 그라데이션 */
+
+.ssrf {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.rxss {
+    background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    color: white;
+    border: none;
+}
+
+.fileup {
+    background: linear-gradient(135deg, #A8E6CF 0%, #FFD3B6 100%);
+    color: #333;
+    border: none;
+}
+
+.info-box {
+    background: #e7f3ff;
+    border-left: 4px solid #2196F3;
+    padding: 15px;
+    border-radius: 5px;
+    margin-top: 20px;
+}
+
+.info-box h3 {
+    color: #1976D2;
+    margin-bottom: 10px;
+}
+
+.info-box p {
+    color: #555;
+    line-height: 1.6;
+}
+
+.db-link {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 12px 30px;
+    background: #28a745;
+    color: white;
+    text-decoration: none;
+    border-radius: 25px;
+    font-weight: bold;
+    transition: all 0.3s ease;
+}
+
+.db-link:hover {
+    background: #218838;
+    transform: scale(1.05);
+}

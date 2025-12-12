@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSRF Test</title>
+</head>
+<body>
+    <h1>SSRF Test</h1>
+
+    <form method="POST">
+        <label>Request URL:</label>
+        <input type="text" name="image_url">
+        <br><br>
+
+        <button type="submit" formaction="{% url 'vulnerable_image' %}"> 안전하지않은코드
+</button>
+<button type="submit" formaction="{% url 'safe_image' %}"> 안전한코드
+</button>
+    </form>
+</body>
+</html>
