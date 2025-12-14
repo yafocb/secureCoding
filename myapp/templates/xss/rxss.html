@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xss</title>
+</head>
+<body>
+    <h1>H3ll0 Reflected XSS</h1>
+
+    <form method="post">
+        <label for="message">Message:</label>
+        <input type="text" id="message" name="message" required>
+        <!-- 안전하게 처리할 경우의 제출 -->
+        <button type="submit" name="submit" value="safe">safe_Submit</button>
+        <!-- 취약하게 처리할 경우의 제출 -->
+        <button type="submit" name="submit">Submit</button>
+    </form>
+</body>
+</html>
