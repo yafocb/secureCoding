@@ -3,255 +3,140 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>테스트 결과</title>
-  {% load static %}
-  <link rel="stylesheet" href="{% static 'css/common.css' %}">
-  <style>
-    body {
-      background: linear-gradient(135deg, #bfe9ff 0%, #ff6e7f 100%);
-      min-height: 100vh;
-      padding: 20px;
-    }
-
-    .container {
-      max-width: 900px;
-    }
-
-    h1 {
-      border-bottom: 3px solid #667eea;
-      color: #333;
-    }
-
-    .mode-badge {
-      display: inline-block;
-      padding: 10px 20px;
-      border-radius: 25px;
-      font-weight: bold;
-      font-size: 1.1em;
-      margin: 15px 0;
-      color: #fff;
-    }
-
-    .badge-vuln {
-      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
-    }
-
-    .badge-safe {
-      background: linear-gradient(135deg, #2196F3 0%, #21CBF3 100%);
-    }
-
-    .result-box {
-      background: white;
-      padding: 25px;
-      border-radius: 15px;
-      margin: 20px 0;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    }
-
-    .result-box h3 {
-      color: #555;
-      margin-top: 0;
-      margin-bottom: 15px;
-      padding-bottom: 10px;
-      border-bottom: 2px solid #f0f0f0;
-    }
-
-    .sql-query {
-      background: #f4f4f4;
-      padding: 15px;
-      border-radius: 8px;
-      font-family: 'Courier New', monospace;
-      font-size: 14px;
-      color: #333;
-      overflow-x: auto;
-      border-left: 4px solid #667eea;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-    }
-
-    .data-list {
-      list-style: none;
-      padding: 0;
-    }
-
-    .data-list li {
-      background: #f8f9fa;
-      padding: 12px 15px;
-      margin: 8px 0;
-      border-radius: 8px;
-      border-left: 3px solid #667eea;
-    }
-
-    .attack-success {
-      background: #fff5f5;
-      border-left-color: #ff6b6b;
-      color: #c62828;
-      font-weight: bold;
-    }
-
-    .safe-success {
-      background: #f5fff5;
-      border-left-color: #56ab2f;
-      color: #2e7d32;
-      font-weight: bold;
-    }
-
-    .blocked {
-      background: #fff3e0;
-      border-left-color: #ff9800;
-      color: #e65100;
-      font-weight: bold;
-    }
-
-    .message-box {
-      padding: 15px;
-      border-radius: 10px;
-      margin: 20px 0;
-      border-left: 4px solid;
-      font-weight: bold;
-    }
-
-    .message-attack {
-      background: #fff5f5;
-      border-color: #ff6b6b;
-      color: #c62828;
-    }
-
-    .message-safe {
-      background: #f5fff5;
-      border-color: #56ab2f;
-      color: #2e7d32;
-    }
-
-    .message-blocked {
-      background: #fff3e0;
-      border-color: #ff9800;
-      color: #e65100;
-    }
-
-    .no-data {
-      color: #999;
-      text-align: center;
-      padding: 20px;
-      font-style: italic;
-    }
-
-    .links {
-      margin-top: 30px;
-      padding-top: 20px;
-      border-top: 2px solid #e0e0e0;
-      text-align: center;
-    }
-
-    .links a {
-      display: inline-block;
-      margin: 10px;
-      padding: 12px 30px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      text-decoration: none;
-      border-radius: 25px;
-      font-weight: bold;
-      transition: all 0.3s;
-    }
-
-    .links a:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-    }
-
-    .error-detail {
-      background: #f8f9fa;
-      padding: 10px;
-      border-radius: 5px;
-      font-family: 'Courier New', monospace;
-      font-size: 12px;
-      color: #666;
-      margin-top: 10px;
-    }
-  </style>
+  <title>업로드 결과</title>
 </head>
 <body>
-  <div class="container">
-    <h1>🔍 테스트 결과</h1>
-
-    <div>
-      <strong>실행 모드:</strong>
-      {% if mode == "vulnerable" %}
-        <span class="mode-badge badge-vuln">
-          🔴 취약한 코드 (보안 검증 미흡)
-        </span>
-      {% elif mode == "safe" %}
-        <span class="mode-badge badge-safe">
-          🔵 안전한 코드 (보안 검증 적용)
-        </span>
-      {% else %}
-        <span class="mode-badge" style="background:#6c757d;">
-          ❓ 알 수 없음
-        </span>
-      {% endif %}
-    </div>
-
-    <div class="result-box">
-      <h3>📝 실행된 쿼리/명령</h3>
-      <div class="sql-query">
-        {{ executed_sql }}
-      </div>
-    </div>
-
-    <div class="result-box">
-      <h3>📊 실행 결과</h3>
-
-      {% if message %}
-        {% if mode == "vulnerable" and attack_success %}
-          <div class="message-box message-attack">
-            <strong>🔴 {{ message }}</strong>
-          </div>
-        {% elif mode == "safe" and not attack_success %}
-          <div class="message-box message-safe">
-            <strong>✅ {{ message }}</strong>
-          </div>
-        {% else %}
-          <div class="message-box message-blocked">
-            <strong>🛡️ {{ message }}</strong>
-          </div>
-        {% endif %}
-      {% endif %}
-
-      {% if results %}
-        <ul class="data-list">
-          {% for r in results %}
-            {% if forloop.first %}
-              {% if mode == "vulnerable" and attack_success %}
-                <li class="attack-success">{{ r }}</li>
-              {% elif mode == "safe" and not attack_success %}
-                <li class="safe-success">{{ r }}</li>
-              {% else %}
-                <li class="blocked">{{ r }}</li>
-              {% endif %}
-            {% else %}
-              <li>{{ r }}</li>
-            {% endif %}
-          {% endfor %}
-        </ul>
-      {% else %}
-        {% if not message %}
-          <div class="no-data">결과 데이터가 없습니다.</div>
-        {% endif %}
-      {% endif %}
-
-      {% if error_detail %}
-        <div class="error-detail">
-          <strong>🔍 디버그 정보:</strong><br>
-          {{ error_detail }}
-        </div>
-      {% endif %}
-    </div>
-
-    <div class="links">
-      <a href="{% url 'file_upload' %}">🔙 파일 업로드로</a>
-      <a href="{% url 'index' %}">🏠 메인으로</a>
-    </div>
+  <h1>업로드 결과</h1>
+  
+  <!-- 모드 표시 -->
+  <h2>
+    {% if mode == 'vulnerable' %}
+      ❌ 취약 코드 모드
+    {% else %}
+      ✅ 안전 코드 모드
+    {% endif %}
+  </h2>
+  
+  <!-- 결과 상태 -->
+  {% if success %}
+    <p style="color: green; font-size: 1.2em;">
+      <strong>✅ 업로드 성공!</strong>
+    </p>
+  {% else %}
+    <p style="color: red; font-size: 1.2em;">
+      <strong>업로드 차단됨 ({{ blocked_step }}단계에서 차단)</strong>
+    </p>
+    <p><strong>차단 사유:</strong> {{ blocked_reason }}</p>
+  {% endif %}
+  
+  <hr>
+  
+  <!-- 파일 정보 -->
+  <h3>파일 정보</h3>
+  <table border="1" cellpadding="8">
+    <tr><td>원본 파일명</td><td>{{ filename }}</td></tr>
+    {% if saved_name %}<tr><td>저장된 파일명</td><td>{{ saved_name }}</td></tr>{% endif %}
+    {% if file_ext %}<tr><td>확장자</td><td>{{ file_ext }}</td></tr>{% endif %}
+    {% if content_type %}<tr><td>MIME 타입</td><td>{{ content_type }}</td></tr>{% endif %}
+    {% if file_size %}<tr><td>파일 크기</td><td>{{ file_size }} bytes</td></tr>{% endif %}
+    {% if image_size %}<tr><td>이미지 크기</td><td>{{ image_size }}</td></tr>{% endif %}
+    {% if file_path %}<tr><td>저장 경로</td><td><code>{{ file_path }}</code></td></tr>{% endif %}
+  </table>
+  
+  <!-- 실행된 로직 -->
+  <h3>실행된 로직</h3>
+  <p><code>{{ logic }}</code></p>
+  
+  <!-- 검증 단계 표시 (안전 모드일 때) -->
+  {% if steps %}
+  <h3>검증 단계</h3>
+  <table border="1" cellpadding="8">
+    <tr><th>단계</th><th>검증 항목</th><th>검사 내용</th><th>허용 조건</th><th>결과</th></tr>
+    {% for s in steps %}
+    <tr>
+      <td>{{ s.step }}단계</td><td>{{ s.name }}</td><td>{{ s.check }}</td><td>{{ s.allowed }}</td>
+      <td>{% if s.passed %}✅{% else %}❌{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  
+  <!-- 파일 열기/실행 버튼 (업로드 성공 시) -->
+  {% if success and file_url %}
+  <hr>
+  <h3>파일 접근</h3>
+  <p>
+    <a href="{{ file_url }}" target="_blank">
+      <button>새 탭에서 파일 열기(파일 내용만 확인)</button>
+    </a>
+  </p>
+  <p>
+    <strong>파일 URL:</strong> 
+    <code>{{ file_url }}</code>
+  </p>
+  
+  <!-- 실행 가능한 파일인 경우 실행 UI 표시 -->
+  {% if file_ext == '.py' or file_ext == '.php' or file_ext == '.ps1' or file_ext == '.bat' or file_ext == '.exe' %}
+  <div>
+    <h4>파일 실행 (취약점 시연)</h4>
+    <p>
+      <label>명령어 입력:</label><br>
+      <input type="text" id="cmd-input" placeholder="dir, whoami, ipconfig" style="width: 300px; padding: 5px;" onkeypress="if(event.key==='Enter') executeFile()">
+      <button onclick="executeFile()">실행</button>
+    </p>
+    <div id="exec-result" style="background: #1e1e1e; color: #0f0; width: 850px; padding: 10px; font-family: monospace; white-space: pre-wrap; display: none; margin-top: 10px;"></div>
   </div>
+  
+  <script>
+    function executeFile() {
+      const cmd = document.getElementById('cmd-input').value;
+      const out = document.getElementById('exec-result');
+
+      showRunning(out, cmd);
+
+      fetch('{% url "execute_file" %}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: buildBody(cmd)
+      })
+        .then(r => r.json())
+        .then(d => render(out, cmd, d))
+        .catch(e => renderError(out, cmd, e));
+    }
+
+    function showRunning(out, cmd) {
+      out.style.display = 'block';
+      out.textContent = `$ ${cmd}\n실행 중...`;
+    }
+
+    function buildBody(cmd) {
+      return `filename={{ saved_name }}&cmd=${encodeURIComponent(cmd)}`;
+    }
+
+    function render(out, cmd, data) {
+      out.style.color = data.success ? '#0f0' : '#f00';
+      out.textContent =
+        `$ ${cmd}\n` + (data.success ? data.output : `❌ ${data.error}`);
+    }
+
+    function renderError(out, cmd, err) {
+      out.style.color = '#f00';
+      out.textContent = `$ ${cmd}\n❌ 네트워크 오류: ${err}`;
+    }
+
+  </script>
+  {% endif %}
+  {% endif %}
+  {% endif %}
+  
+  <hr>
+  
+  <p>
+    <a href="{% url 'file_upload' %}">← 다시 업로드하기</a> | 
+    <a href="{% url 'index' %}">메인으로</a>
+  </p>
 </body>
 </html>

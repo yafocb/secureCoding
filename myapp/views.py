@@ -1,25 +1,15 @@
 # myapp/views.py
 from django.shortcuts import render, redirect
-from django.http import JsonResponse
 from django.db import connection
+from django.http import HttpResponse, FileResponse, JsonResponse
 from django.core.files.storage import FileSystemStorage
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 from PIL import Image
-from .forms import LoginForm, ImageForm, FileUploadForm
+from .forms import LoginForm, ImageForm
 
-import os
-import sys
-import html
-import uuid
-import shutil
-import base64
-import hashlib
-import requests
-import subprocess
-
-
-
+import os, sys, subprocess, uuid, io, re, filetype
+import html, shutil, base64, hashlib, requests
 
 # 메인 선택 화면
 def index(request):
@@ -130,18 +120,7 @@ def safe_image(request):
 
 
 # 3. 위험한 파일 업로드 (취약 코드 / 안전 코드)
-uploaded_files = []
-max_size = 10 * 1024 * 1024  # 10MB
-
-# 허용할 이미지 MIME 타입들
-ALLOWED_MIME = [
-    'image/jpeg',
-    'image/png',
-    'image/gif',
-    'image/webp',
-    'image/bmp',
-    'image/tiff',
-]
+MAX_SIZE = 10 * 1024 * 1024  # 10MB
 
 # 허용할 이미지 확장자들
 ALLOWED_EXT = [
@@ -153,394 +132,170 @@ ALLOWED_EXT = [
     '.tif', '.tiff',
 ]
 
-# 확실히 막을 위험 확장자들
-DANGEROUS_EXT = {
-    '.py': 'python',
-    '.sh': 'shell',
-    '.bash': 'shell',
-    '.php': 'php',
-    '.exe': 'exe',
-    '.bat': 'bat',
-}
+# 허용할 이미지 MIME 타입들
+ALLOWED_MIME = [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/bmp',
+    'image/tiff',
+]
 
-# 공통 유틸
-def get_file_type(filename):
-    """파일 확장자로 파일 형식 감지"""
-    ext = os.path.splitext(filename)[1].lower()
-    if ext in DANGEROUS_EXT:
-        return DANGEROUS_EXT[ext], True  # (파일형식, 실행가능여부)
-    return None, False
+FORMAT_MAP = {
+    'JPEG': '.jpg', 
+    'PNG': '.png', 
+    'GIF': '.gif', 
+    'WEBP': '.webp', 
+    'BMP': '.bmp', 
+    'TIFF': '.tiff'
+}
 
 def get_upload_dir():
     upload_dir = os.path.join(settings.BASE_DIR, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
     return upload_dir
 
-def save_file(upload_dir, uploaded_file, filename=None):
-    fs = FileSystemStorage(location=upload_dir)
-    if filename:
-        saved_name = fs.save(filename, uploaded_file)
-    else:
-        saved_name = fs.save(uploaded_file.name, uploaded_file)
-    file_path = fs.path(saved_name)
-    return file_path, saved_name
+def make_result(request, mode, success, steps, filename, **kwargs):
+    return render(request, 'fileUpload/result.html', {
+        'mode': mode, 'success': success, 'steps': steps, 'filename': filename, **kwargs
+    })
 
-def verify_image_and_get_size(uploaded_file):
-    # Pillow로 이미지 검증 + (width, height) 반환
-    uploaded_file.seek(0)
-    img = Image.open(uploaded_file)
-    img.verify()
-
-    uploaded_file.seek(0)
-    img = Image.open(uploaded_file)
-    width, height = img.size
-    return width, height
-
-def clear_uploaded_files():
-    global uploaded_files
-    for file_info in uploaded_files:
-        file_path = file_info.get('path')
-        if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except:
-                pass
-    uploaded_files = []
-
-# 메인 뷰: 취약 / 안전 모드
 @csrf_exempt
 def file_upload(request):
-    # mode = vulnerable : 검증 없이 파일 업로드 (취약 코드)
-    # mode = safe       : 확장자 + MIME + 이미지 검증 후 업로드 (안전 코드)
-    global uploaded_files
+    if request.method != 'POST':
+        return render(request, 'fileUpload/file_upload.html')
+    
+    uploaded_file = request.FILES.get('file')
+    if not uploaded_file:
+        return render(request, 'fileUpload/file_upload.html', {'error': '파일을 선택해주세요.'})
+    
+    mode = request.POST.get('mode', 'safe')
+    filename = uploaded_file.name
+    file_ext = os.path.splitext(filename)[1].lower()
+    file_size = uploaded_file.size
     upload_dir = get_upload_dir()
+    
+    # 파일 내용으로 실제 MIME 타입 확인
+    uploaded_file.seek(0)
+    file_content = uploaded_file.read()
+    kind = filetype.guess(file_content)
+    real_mime = kind.mime if kind else 'unknown'
+    uploaded_file.seek(0)
+    
+    # 취약 코드
+    if mode == 'vulnerable':
+        from django.core.files.storage import FileSystemStorage
+        fs = FileSystemStorage(location=upload_dir)
+        saved_name = fs.save(filename, uploaded_file)
+        return make_result(request, 'vulnerable', True, [], filename,
+            saved_name=saved_name, file_ext=file_ext, content_type=real_mime,
+            file_size=file_size, file_path=fs.path(saved_name),
+            file_url=f'/uploads/{saved_name}', logic='검증 없이 모든 파일 저장')
+    
+    # 안전 코드
+    steps = []
+    
+    # 검증 함수
+    def check(step, name, condition, check_msg, allowed_msg, fail_reason, fail_logic):
+        steps.append({'step': step, 'name': name, 'check': check_msg, 'allowed': allowed_msg, 'passed': condition})
+        if not condition:
+            return make_result(request, 'safe', False, steps, filename,
+                blocked_step=step, blocked_reason=fail_reason, logic=fail_logic,
+                file_ext=file_ext, content_type=real_mime, file_size=file_size)
+        return None
+    
+    # 1~3단계
+    if r := check(1, '확장자 검증', file_ext in ALLOWED_EXT, f'확장자: {file_ext}',
+        f'허용: {", ".join(ALLOWED_EXT)}', f'허용되지 않은 확장자: {file_ext}', '화이트리스트 기반 확장자 검증'): return r
+    if r := check(2, 'MIME 타입 검증 (filetype)', real_mime in ALLOWED_MIME, f'실제 MIME: {real_mime}',
+        f'허용: {", ".join(ALLOWED_MIME)}', f'허용되지 않은 MIME 타입: {real_mime}', 'filetype으로 실제 파일 내용 검증'): return r
+    if r := check(3, '파일 크기 검증', file_size <= MAX_SIZE, f'크기: {file_size:,} bytes',
+        f'최대: {MAX_SIZE:,} bytes', f'파일 크기 초과: {file_size:,} bytes', '파일 크기 제한 검증'): return r
+    
+    # 4단계: 이미지 검증
+    try:
+        uploaded_file.seek(0)
+        img = Image.open(uploaded_file)
+        img.verify()
+        uploaded_file.seek(0)
+        img = Image.open(uploaded_file)
+        width, height, img_format = img.size[0], img.size[1], img.format
+        image_valid = True
+    except:
+        image_valid, width, height = False, 0, 0
+    
+    if r := check(4, '이미지 검증 (Pillow)', image_valid, 
+        f'이미지 크기: {width}x{height}' if image_valid else '이미지 아님',
+        '실제 이미지 파일만 허용', '실제 이미지 파일이 아님', 'Pillow 이미지 검증'): return r
+    
+    # 5단계: 파일명 검증
+    safe_filename = re.sub(r'[^a-zA-Z0-9가-힣._-]', '_', filename).replace('..', '_').replace('\x00', '')
+    steps.append({'step': 5, 'name': '파일명 검증', 'check': f'원본: {filename}',
+        'allowed': '위험 문자 제거', 'passed': True})
+    
+    # 6단계: 이미지 재생성
+    try:
+        uploaded_file.seek(0)
+        img = Image.open(uploaded_file)
+        img_buffer = io.BytesIO()
+        if img.mode in ('RGBA', 'P') and img_format == 'JPEG':
+            img = img.convert('RGB')
+        img.save(img_buffer, format=img_format)
+        img_buffer.seek(0)
+        regen_ok = True
+    except:
+        regen_ok = False
+    
+    if r := check(6, '이미지 재생성 (Polyglot 방지)', regen_ok, f'포맷: {img_format}',
+        '이미지 데이터만 추출', '이미지 재생성 실패', '이미지 재생성'): return r
+    
+    # 저장
+    new_ext = FORMAT_MAP.get(img_format, '.png')
+    final_name = f"{os.path.splitext(safe_filename)[0]}_{uuid.uuid4().hex[:8]}{new_ext}"
+    file_path = os.path.join(upload_dir, final_name)
+    with open(file_path, 'wb') as f:
+        f.write(img_buffer.getvalue())
+    
+    return make_result(request, 'safe', True, steps, filename,
+        saved_name=final_name, file_ext=new_ext, content_type=real_mime,
+        file_size=os.path.getsize(file_path), file_path=file_path,
+        file_url=f'/myapp/uploads/{final_name}', image_size=f'{width}x{height}',
+        logic='6단계 보안 검증 + 이미지 재생성')
 
-    if request.method == 'POST':
-        # 전체 삭제 버튼
-        if request.POST.get('clear'):
-            clear_uploaded_files()
-            return redirect('file_upload')
+def serve_upload(request, filename):
+    file_path = os.path.join(get_upload_dir(), filename)
+    return FileResponse(open(file_path, 'rb')) if os.path.exists(file_path) else HttpResponse('파일 없음', status=404)
 
-        # 파일 실행 (Ajax)
-        if request.POST.get('execute'):
-            file_index = int(request.POST.get('file_index', -1))
-            cmd = request.POST.get('cmd', '').strip()
-
-            if 0 <= file_index < len(uploaded_files):
-                file_info = uploaded_files[file_index]
-                file_path = file_info.get('path')
-                file_type = file_info.get('file_type')
-
-                # 파일 형식별 실행
-                try:
-                    if file_type == 'python':
-                        result = subprocess.run(
-                            [sys.executable, file_path, cmd],
-                            capture_output=True,
-                            text=True,
-                            timeout=5
-                        )
-                        output = result.stdout if result.stdout else result.stderr
-                        return JsonResponse({'success': True, 'output': output or '(출력 없음)'})
-
-                    elif file_type == 'shell':
-                        result = subprocess.run(
-                            ['bash', file_path, cmd],
-                            capture_output=True,
-                            text=True,
-                            timeout=5
-                        )
-                        output = result.stdout if result.stdout else result.stderr
-                        return JsonResponse({'success': True, 'output': output or '(출력 없음)'})
-
-                    elif file_type == 'php':
-                        result = subprocess.run(
-                            ['php', file_path, cmd],
-                            capture_output=True,
-                            text=True,
-                            timeout=5
-                        )
-                        output = result.stdout if result.stdout else result.stderr
-                        return JsonResponse({'success': True, 'output': output or '(출력 없음)'})
-
-                    elif file_type == 'bat' or file_type == 'exe':
-                        return JsonResponse({
-                            'success': False,
-                            'error': f'{file_type.upper()} 파일은 Linux에서 실행할 수 없습니다.'
-                        })
-
-                    else:
-                        return JsonResponse({
-                            'success': False,
-                            'error': f'지원하지 않는 파일 형식입니다: {file_type}'
-                        })
-
-                except subprocess.TimeoutExpired:
-                    return JsonResponse({'success': False, 'error': '실행 시간 초과 (5초)'})
-                except FileNotFoundError as e:
-                    return JsonResponse({'success': False, 'error': f'실행 환경 없음: {str(e)}'})
-                except Exception as e:
-                    return JsonResponse({'success': False, 'error': f'실행 오류: {str(e)}'})
-
-            return JsonResponse({'success': False, 'error': '파일을 찾을 수 없습니다.'})
-
-        form = FileUploadForm(request.POST, request.FILES)
-
-        if not form.is_valid():
-            # Form 검증 실패
-            return render(request, 'fileUpload/file_upload.html', {
-                'form': form,
-                'uploaded_files': uploaded_files,
-                'error': '파일을 선택해주세요.'
-            })
-
-        # Form에서 파일 가져오기
-        uploaded_file = form.cleaned_data['upload_file']
-        mode = request.POST.get('mode', 'safe')
-
-        if not uploaded_file:
-            context = {
-                'mode': mode,
-                'executed_sql': '업로드할 파일이 없습니다.',
-                'results': [],
-                'message': '업로드할 파일을 선택해주세요.',
-                'attack_success': False,
-            }
-            return render(request, 'fileUpload/result.html', context)
-
-        filename = uploaded_file.name
-        file_ext = os.path.splitext(filename)[1].lower()
-        file_size = uploaded_file.size
-        content_type = uploaded_file.content_type or '알 수 없음'
-
-        file_type, is_executable = get_file_type(filename)
-
-        # 1) 취약한 코드 (vulnerable)
-        if mode == 'vulnerable':
-            try:
-                file_path, saved_name = save_file(upload_dir, uploaded_file)
-
-                uploaded_files.append({
-                    'name': filename,
-                    'size': file_size,
-                    'mime': content_type,
-                    'path': file_path,
-                    'mode': 'vulnerable',
-                    'file_type': file_type,
-                    'is_executable': is_executable,
-                })
-
-                executed_sql = (
-                    "취약 코드: 확장자, MIME, 내용 검증 없이 파일을 서버에 저장\n"
-                    f"저장 경로: {file_path}"
-                )
-
-                results = [
-                    "🔴 공격 성공! 검증 없이 파일이 업로드되었습니다.",
-                    "",
-                    f"파일명: {filename}",
-                    f"확장자: {file_ext or '(없음)'}",
-                    f"MIME 타입: {content_type}",
-                    f"크기: {file_size} bytes",
-                    f"저장 경로: {file_path}",
-                    "",
-                    "⚠️ 위험:",
-                    "  - 어떤 종류의 파일이든 업로드 가능",
-                    "  - 웹셸 / 스크립트 업로드 시 원격 코드 실행 가능",
-                ]
-
-                context = {
-                    'mode': 'vulnerable',
-                    'executed_sql': executed_sql,
-                    'results': results,
-                    'message': "취약 코드 실행 결과: 공격이 성공했습니다.",
-                    'attack_success': True,
-                    'error_detail': None,
-                }
-            except Exception as e:
-                context = {
-                    'mode': 'vulnerable',
-                    'executed_sql': "취약 코드: 파일 저장 중 예외 발생",
-                    'results': [],
-                    'message': "파일 저장 중 오류가 발생했습니다.",
-                    'attack_success': True,  # 로직 자체는 여전히 취약
-                    'error_detail': str(e),
-                }
-
-            return render(request, 'fileUpload/result.html', context)
-
-        # ───── 2) 안전한 코드 (safe) ─────
-        else:
-            try:
-                # 1) 위험 확장자 바로 차단
-                if file_ext in DANGEROUS_EXT:
-                    executed_sql = (
-                        "안전 코드: 위험 확장자 차단\n"
-                        f"차단된 확장자: {file_ext}"
-                    )
-                    results = [
-                        "🛡️ 공격 차단! 위험한 확장자의 파일입니다.",
-                        "",
-                        f"파일명: {filename}",
-                        f"확장자: {file_ext}",
-                    ]
-                    context = {
-                        'mode': 'safe',
-                        'executed_sql': executed_sql,
-                        'results': results,
-                        'message': "안전 코드 실행 결과: 위험 확장자 파일이 차단되었습니다.",
-                        'attack_success': False,
-                        'error_detail': None,
-                    }
-                    return render(request, 'fileUpload/result.html', context)
-
-                # 2) 허용 확장자 화이트리스트
-                if file_ext not in ALLOWED_EXT:
-                    executed_sql = (
-                        "안전 코드: 확장자 검증\n"
-                        f"업로드된 확장자: {file_ext}\n"
-                        f"허용 확장자: {', '.join(ALLOWED_EXT)}"
-                    )
-                    results = [
-                        "🛡️ 공격 차단! 허용되지 않은 확장자의 파일입니다.",
-                        "",
-                        f"파일명: {filename}",
-                        f"확장자: {file_ext or '(없음)'}",
-                    ]
-                    context = {
-                        'mode': 'safe',
-                        'executed_sql': executed_sql,
-                        'results': results,
-                        'message': "안전 코드 실행 결과: 비허용 확장자 파일이 차단되었습니다.",
-                        'attack_success': False,
-                        'error_detail': None,
-                    }
-                    return render(request, 'fileUpload/result.html', context)
-
-                # 3) MIME 타입 검증
-                if content_type not in ALLOWED_MIME:
-                    executed_sql = (
-                        "안전 코드: MIME 타입 검증 실패\n"
-                        f"업로드된 MIME: {content_type}"
-                    )
-                    results = [
-                        "🛡️ 공격 차단! 허용되지 않은 MIME 타입입니다.",
-                        "",
-                        f"파일명: {filename}",
-                        f"MIME 타입: {content_type}",
-                    ]
-                    context = {
-                        'mode': 'safe',
-                        'executed_sql': executed_sql,
-                        'results': results,
-                        'message': "안전 코드 실행 결과: MIME 검증 단계에서 차단되었습니다.",
-                        'attack_success': False,
-                        'error_detail': None,
-                    }
-                    return render(request, 'fileUpload/result.html', context)
-
-                # 4) 크기 검증
-                if file_size >= max_size:
-                    executed_sql = (
-                        "안전 코드: 파일 크기 검증 실패\n"
-                        f"파일 크기: {file_size} bytes (최대 {max_size} bytes)"
-                    )
-                    results = [
-                        "🛡️ 공격 차단! 파일 크기 제한을 초과했습니다.",
-                        "",
-                        f"파일명: {filename}",
-                        f"크기: {file_size} bytes",
-                    ]
-                    context = {
-                        'mode': 'safe',
-                        'executed_sql': executed_sql,
-                        'results': results,
-                        'message': "안전 코드 실행 결과: 크기 검증 단계에서 차단되었습니다.",
-                        'attack_success': False,
-                        'error_detail': None,
-                    }
-                    return render(request, 'fileUpload/result.html', context)
-
-                # 5) 실제 이미지 파일인지 검증 (Pillow)
-                try:
-                    width, height = verify_image_and_get_size(uploaded_file)
-                    dimensions = f"{width}x{height}"
-                except Exception as e:
-                    executed_sql = (
-                        "안전 코드: 이미지 검증 실패\n"
-                        "Pillow로 이미지로 인식되지 않음"
-                    )
-                    results = [
-                        "🛡️ 공격 차단! 실제 이미지 파일이 아닙니다.",
-                        "",
-                        f"파일명: {filename}",
-                        f"확장자: {file_ext}",
-                        f"MIME 타입: {content_type}",
-                        "",
-                        "💡 단순히 확장자만 바꾼 가짜 이미지는 차단됩니다.",
-                    ]
-                    context = {
-                        'mode': 'safe',
-                        'executed_sql': executed_sql,
-                        'results': results,
-                        'message': "안전 코드 실행 결과: 이미지 검증 단계에서 차단되었습니다.",
-                        'attack_success': False,
-                        'error_detail': f'Pillow 오류: {type(e).__name__}',
-                    }
-                    return render(request, 'fileUpload/result.html', context)
-
-                # 6) 모든 검증 통과 → 안전하게 저장
-                uploaded_file.seek(0)
-                file_path, saved_name = save_file(upload_dir, uploaded_file)
-
-                uploaded_files.append({
-                    'name': filename,
-                    'saved_name': saved_name,
-                    'size': file_size,
-                    'mime': content_type,
-                    'dimensions': dimensions,
-                    'path': file_path,
-                    'mode': 'safe',
-                })
-
-                executed_sql = (
-                    "안전 코드: 검증된 이미지 파일만 서버에 저장\n"
-                    f"저장 경로: {file_path}"
-                )
-                results = [
-                    "✅ 정상 업로드! 보안 검증을 통과한 이미지 파일입니다.",
-                    "",
-                    f"파일명: {filename}",
-                    f"확장자: {file_ext}",
-                    f"MIME 타입: {content_type}",
-                    f"크기: {file_size} bytes",
-                    f"이미지 크기: {dimensions}",
-                    f"저장 경로: {file_path}",
-                ]
-                context = {
-                    'mode': 'safe',
-                    'executed_sql': executed_sql,
-                    'results': results,
-                    'message': "안전 코드 실행 결과: 검증된 이미지 파일만 업로드되었습니다.",
-                    'attack_success': False,  # 공격 성공이 아니라 방어 성공
-                    'error_detail': None,
-                }
-
-            except Exception as e:
-                context = {
-                    'mode': 'safe',
-                    'executed_sql': "안전 코드: 파일 처리 중 예외 발생",
-                    'results': [],
-                    'message': "파일 처리 중 오류가 발생했습니다.",
-                    'attack_success': False,
-                    'error_detail': str(e),
-                }
-
-            return render(request, 'fileUpload/result.html', context)
-
-    # GET 요청: 업로드 페이지
-    form = FileUploadForm()
-    return render(request, 'fileUpload/file_upload.html', {
-        'form': form,
-        'uploaded_files': uploaded_files,
-    })
+@csrf_exempt
+def execute_file(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST만 허용'})
+    
+    filename = request.POST.get('filename', '')
+    cmd = request.POST.get('cmd', '')
+    file_path = os.path.join(get_upload_dir(), filename)
+    
+    try:
+        content = open(file_path, 'rb').read().decode('utf-8', errors='ignore').lower()
+    except:
+        return JsonResponse({'success': False, 'error': '파일 읽기 실패'})
+    
+    # 내용으로 타입 판단
+    if '<?php' in content: runner = ['php', file_path, cmd]
+    elif 'import ' in content or 'def ' in content: runner = [sys.executable, file_path, cmd]
+    elif '@echo off' in content: runner = [file_path, cmd]
+    elif 'param(' in content: runner = ['powershell', '-File', file_path, cmd]
+    else:
+        ext = os.path.splitext(filename)[1].lower()
+        runners = {'.py': [sys.executable, file_path, cmd], '.php': ['php', file_path, cmd],
+                   '.ps1': ['powershell', '-File', file_path, cmd], '.bat': [file_path, cmd], '.exe': [file_path, cmd]}
+        runner = runners.get(ext)
+        if not runner:
+            return JsonResponse({'success': False, 'error': f'실행 불가: {filename}'})
+    
+    try:
+        result = subprocess.run(runner, capture_output=True, text=True, timeout=5)
+        return JsonResponse({'success': True, 'output': result.stdout or result.stderr or '(출력 없음)'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})

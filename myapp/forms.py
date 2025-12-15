@@ -28,20 +28,6 @@ class ImageForm(forms.Form):
     )
 
 
-# 파일 업로드 폼
-class FileUploadForm(forms.Form):
-    upload_file = forms.FileField(
-        label='업로드할 파일 선택',
-        required=True,
-        widget=forms.FileInput(attrs={
-            'id': 'upload_file',
-            'class': 'file-input',
-        })
-    )
-
-
-
-
 
 
 

@@ -1,0 +1,3 @@
+‰PNG
+
+import subprocess, sys; print("fake image")

